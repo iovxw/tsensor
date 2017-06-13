@@ -1,0 +1,11 @@
+[package]
+name = "tsensor"
+version = "0.1.0"
+authors = ["iovxw <iovxw@outlook.com>"]
+
+[dependencies]
+tui = "0.1"
+termion = "1.3"
+futures = "0.1"
+tokio-core = "0.1"
+libpsensor = { version = "0.1", path = "libpsensor" }

@@ -1,0 +1,3 @@
+[submodule "libpsensor"]
+	path = libpsensor
+	url = git@github.com:iovxw/libpsensor-rs.git
