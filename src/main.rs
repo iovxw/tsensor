@@ -33,8 +33,8 @@ impl App {
             let mut lp = Core::new().unwrap();
             let (sensors, stream) = libpsensor::new(time::Duration::from_millis(500), &lp.handle());
             let data = sensors
-                .iter()
-                .map(|sensor| (sensor.clone(), Arc::new(AtomicUsize::new(1))))
+                .into_iter()
+                .map(|sensor| (sensor, Arc::new(AtomicUsize::new(1))))
                 .collect::<Vec<_>>();
 
             let app = App {
