@@ -7,7 +7,8 @@ extern crate libpsensor;
 use std::io;
 use std::thread;
 use std::time;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use termion::event;
 use termion::input::TermRead;
@@ -22,31 +23,29 @@ use libpsensor::{Psensor, PsensorType};
 
 struct App {
     size: Rect,
-    data: Vec<(Arc<libpsensor::Psensor>, f64)>,
+    data: Vec<(Arc<libpsensor::Psensor>, Arc<AtomicUsize>)>,
 }
 
 impl App {
-    fn new() -> Arc<Mutex<App>> {
+    fn new() -> App {
         let (tx, rx) = mpsc::sync_channel(1);
         thread::spawn(move || {
             let mut lp = Core::new().unwrap();
             let (sensors, stream) = libpsensor::new(time::Duration::from_millis(500), &lp.handle());
             let data = sensors
                 .iter()
-                .map(|sensor| (sensor.clone(), 1.0_f64))
-                .collect();
+                .map(|sensor| (sensor.clone(), Arc::new(AtomicUsize::new(1))))
+                .collect::<Vec<_>>();
 
             let app = App {
                 size: Rect::default(),
-                data: data,
+                data: data.clone(),
             };
-            let app = Arc::new(Mutex::new(app));
-            tx.send(app.clone()).unwrap();
-            lp.run(stream.for_each(|(sensor, new_value)| {
-                    let mut app = app.lock().unwrap();
-                    for &mut (ref mut s, ref mut value) in &mut app.data {
+            tx.send(app).unwrap();
+            lp.run(stream.for_each(move |(sensor, new_value)| {
+                    for &(ref s, ref value) in &data {
                         if sensor.id == s.id {
-                            *value = new_value;
+                            value.store(new_value as usize, Ordering::Relaxed);
                             break;
                         }
                     }
@@ -92,19 +91,19 @@ fn main() {
                   });
 
     // App
-    let app = App::new();
+    let mut app = App::new();
 
     // First draw call
     terminal.clear().unwrap();
     terminal.hide_cursor().unwrap();
-    app.lock().unwrap().size = terminal.size().unwrap();
+    app.size = terminal.size().unwrap();
     draw(&mut terminal, &app);
 
     loop {
         let size = terminal.size().unwrap();
-        if app.lock().unwrap().size != size {
+        if app.size != size {
             terminal.resize(size).unwrap();
-            app.lock().unwrap().size = size;
+            app.size = size;
         }
 
         let evt = rx.recv().unwrap();
@@ -122,14 +121,15 @@ fn main() {
     terminal.show_cursor().unwrap();
 }
 
-fn filter_sensor(sensors: &[(Arc<Psensor>, f64)],
+fn filter_sensor(sensors: &[(Arc<Psensor>, Arc<AtomicUsize>)],
                  sensor_type: PsensorType,
                  default_max: u64)
                  -> (Vec<(&str, u64)>, u64) {
     let tmp = sensors
         .iter()
-        .filter_map(|&(ref sensor, value)| if sensor.sensor == sensor_type {
-                        Some((sensor.max, (sensor.name.as_str(), value as u64)))
+        .filter_map(|&(ref sensor, ref value)| if sensor.sensor == sensor_type {
+                        Some((sensor.max,
+                              (sensor.name.as_str(), value.load(Ordering::Relaxed) as u64)))
                     } else {
                         None
                     })
@@ -145,8 +145,7 @@ fn filter_sensor(sensors: &[(Arc<Psensor>, f64)],
     (r, cpus_max_temp)
 }
 
-fn draw(t: &mut Terminal<TermionBackend>, app: &Arc<Mutex<App>>) {
-    let app = app.lock().unwrap();
+fn draw(t: &mut Terminal<TermionBackend>, app: &App) {
     let (cpus, cpus_max_temp) = filter_sensor(&app.data, PsensorType::Cpu, 80);
     let (gpus, gpus_max_temp) = filter_sensor(&app.data, PsensorType::Gpu, 90);
     let (hdds, hdds_max_temp) = filter_sensor(&app.data, PsensorType::Hdd, 60);
