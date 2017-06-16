@@ -43,15 +43,14 @@ impl App {
             };
             tx.send(app).unwrap();
             lp.run(stream.for_each(move |(sensor, new_value)| {
-                    for &(ref s, ref value) in &data {
-                        if sensor.id == s.id {
-                            value.store(new_value as usize, Ordering::Relaxed);
-                            break;
-                        }
+                for &(ref s, ref value) in &data {
+                    if sensor.id == s.id {
+                        value.store(new_value as usize, Ordering::Relaxed);
+                        break;
                     }
-                    Ok(())
-                }))
-                .unwrap();
+                }
+                Ok(())
+            })).unwrap();
         });
         rx.recv().unwrap()
     }
@@ -86,9 +85,9 @@ fn main() {
 
     // Tick
     thread::spawn(move || loop {
-                      clock_tx.send(Event::Tick).unwrap();
-                      thread::sleep(time::Duration::from_millis(500));
-                  });
+        clock_tx.send(Event::Tick).unwrap();
+        thread::sleep(time::Duration::from_millis(500));
+    });
 
     // App
     let mut app = App::new();
@@ -121,18 +120,21 @@ fn main() {
     terminal.show_cursor().unwrap();
 }
 
-fn filter_sensor(sensors: &[(Arc<Psensor>, Arc<AtomicUsize>)],
-                 sensor_type: PsensorType,
-                 default_max: u64)
-                 -> (Vec<(&str, u64)>, u64) {
+fn filter_sensor(
+    sensors: &[(Arc<Psensor>, Arc<AtomicUsize>)],
+    sensor_type: PsensorType,
+    default_max: u64,
+) -> (Vec<(&str, u64)>, u64) {
     let tmp = sensors
         .iter()
         .filter_map(|&(ref sensor, ref value)| if sensor.sensor == sensor_type {
-                        Some((sensor.max,
-                              (sensor.name.as_str(), value.load(Ordering::Relaxed) as u64)))
-                    } else {
-                        None
-                    })
+            Some((sensor.max, (
+                sensor.name.as_str(),
+                value.load(Ordering::Relaxed) as u64,
+            )))
+        } else {
+            None
+        })
         .collect::<Vec<_>>();
     let cpus_max_temp = tmp.clone()
         .iter()
